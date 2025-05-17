@@ -19,8 +19,20 @@ public:
     auto K = a.size();
     assert(b.size() == K);
     Value accum = c;
-    for (auto [aElem, bElem] : llvm::zip(a, b))
-      accum = builder.create<LLVM::FMulAddOp>(loc, aElem, bElem, accum);
+    for (auto [aElem, bElem] : llvm::zip(a, b)) {
+      // Handle mixed precision: convert f16 inputs to f32 if needed
+      Value convertedA = aElem;
+      Value convertedB = bElem;
+      if (accum.getType().isF32()) {
+        if (aElem.getType().isF16()) {
+          convertedA = builder.create<LLVM::FPExtOp>(loc, builder.getF32Type(), aElem);
+        }
+        if (bElem.getType().isF16()) {
+          convertedB = builder.create<LLVM::FPExtOp>(loc, builder.getF32Type(), bElem);
+        }
+      }
+      accum = builder.create<LLVM::FMulAddOp>(loc, convertedA, convertedB, accum);
+    }
     return accum;
   }
 };

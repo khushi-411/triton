@@ -54,6 +54,15 @@ class AMDFMAVectorMultiplier : public FMAVectorMultiplier {
     }
     // choose one of FMA intrinsics
     assert(aElemTy.isIntOrFloat() && !aElemTy.isIntOrIndex());
+    // For mixed precision (f16 inputs, f32 accumulator), use f32 FMA
+    if (aElemTy.isF16() && dElemTy.isF32()) {
+      chosenOp.vectorSize = 1;
+      chosenOp.outElemTy = f32_ty;
+      chosenOp.intrinsicName = "llvm.fmuladd.f32";
+      chosenOp.additionalArgs = {};
+      return chosenOp;
+    }
+    // For same precision operations
     assert(aElemTy == dElemTy);
     assert(cast<RankedTensorType>(op.getA().getType()).getElementType() ==
            dElemTy);
@@ -88,6 +97,18 @@ class AMDFMAVectorMultiplier : public FMAVectorMultiplier {
   }
 
   Value generateDotInstr(Value a, Value b, Value c) {
+    auto builder = TritonLLVMOpBuilder(loc, rewriter);
+
+    // Handle mixed precision: convert f16 inputs to f32 if needed
+    if (intrinsic.outElemTy.isF32()) {
+      if (a.getType().isF16()) {
+        a = builder.fpext(f32_ty, a);
+      }
+      if (b.getType().isF16()) {
+        b = builder.fpext(f32_ty, b);
+      }
+    }
+
     SmallVector<Value> args{a, b, c};
     args.append(intrinsic.additionalArgs.begin(),
                 intrinsic.additionalArgs.end());
